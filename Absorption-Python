@@ -1,0 +1,499 @@
+# Arduino Imports
+import serial
+import time
+import logging
+import sys
+
+# Opentrons Imports
+import json
+import opentrons.execute
+
+from opentrons.types import Location, Point
+
+# Defining functions
+
+def open_gripper_med():
+    arduino.write(format(('{}\n').format(25)).encode()) # write position to serial port
+    protocol.delay(seconds=1)
+    time.sleep(0.1)
+    reachedPos = str(arduino.readline())
+    protocol.delay(seconds=0.5)
+
+def open_gripper():
+    arduino.write(format(('{}\n').format(0)).encode()) # write position to serial port
+    protocol.delay(seconds=1)
+    time.sleep(0.1)
+    reachedPos = str(arduino.readline())
+    protocol.delay(seconds=0.5)
+    
+def close_gripper():
+    arduino.write(format(('{}\n').format(180)).encode()) # write position to serial port
+    protocol.delay(seconds=1)
+    time.sleep(0.1)
+    reachedPos = str(arduino.readline())
+    protocol.delay(seconds=0.5)
+    
+    
+# Code to find ports
+import serial.tools.list_ports
+
+ports = serial.tools.list_ports.comports()
+for p in ports:
+    print(p.device)
+print(len(ports), 'ports found')
+
+# Connect to Arduino
+import serial                                           # import serial library
+arduino = serial.Serial('/dev/ttyACM3', 9600)   # create serial object named arduino for the gripper
+time.sleep(1)
+arduino_com = serial.Serial(port='/dev/ttyACM2', baudrate=115200, timeout=0.5) # Arduino for communicaton
+
+open_gripper()
+close_gripper()
+open_gripper_med()
+
+def robot_send_signal():
+    test = 1
+    data = 1
+    arduino_com.write(bytes('1', 'utf-8'))
+    time.sleep(2)
+    data = arduino_com.readline()
+    time.sleep(2)
+    test = int(data)
+    print(test)
+
+def robot_wait():
+    test = 1
+    data = 1
+    while test < 20:
+        arduino_com.write(bytes('3', 'utf-8'))
+        time.sleep(2)
+        data = arduino_com.readline()
+        print(data)
+        time.sleep(2)
+        test = int(data)
+        print(test)
+    
+print('Start Matlab Program Now')
+robot_wait()
+print('Matlab Started')
+
+# Check if Arduinos are set up properly
+
+protocol = opentrons.execute.get_protocol_api('2.13')
+
+# Loading custom ladware
+with open('CustomLabware/homemade_2_wellplate_3000ul.json') as labware_file: # PL and absoporption setup
+    labware_def = json.load(labware_file)
+    cuvette_holder = protocol.load_labware_from_definition(labware_def, 1)
+    cuvette_holder.set_offset(x=3.00, y=-2.00, z=0.00)
+    
+with open('CustomLabware/homemadesubstrateholder_18_wellplate_1000ul.json') as labware_file: # Substrate holder
+    labware_def = json.load(labware_file)
+    substrate_holder = protocol.load_labware_from_definition(labware_def, 2)
+
+with open('CustomLabware/homemadecuvettestorage_18_wellplate_4000ul.json') as labware_file: # Cuvette storage 2
+    labware_def = json.load(labware_file)
+    cuvette_storage2 = protocol.load_labware_from_definition(labware_def, 3)
+    
+with open('CustomLabware/faketipholder_1_tiprack_1000ul.json') as labware_file: # Where the gripper "picks up a tip"
+    labware_def = json.load(labware_file)
+    fake_tip_holder = protocol.load_labware_from_definition(labware_def, 4)
+    
+with open('CustomLabware/homemadesubstrateholder_18_wellplate_1000ul.json') as labware_file: # Substrate holder 2
+    labware_def = json.load(labware_file)
+    substrate_holder2 = protocol.load_labware_from_definition(labware_def, 5) 
+    
+with open('CustomLabware/homemadescintillatorvialholder_12_reservoir_20000ul.json') as labware_file: # Electrolyte vials
+    labware_def = json.load(labware_file)
+    electrolyte_vials = protocol.load_labware_from_definition(labware_def, 6)
+    
+with open('CustomLabware/homemadecuvettestorage_18_wellplate_4000ul.json') as labware_file: # Cuvette storage
+    labware_def = json.load(labware_file)
+    cuvette_storage = protocol.load_labware_from_definition(labware_def, 7)
+    
+with open('CustomLabware/homemaderinsing_2_reservoir_1000ul.json') as labware_file: # Rinsing station
+    labware_def = json.load(labware_file)
+    rinser = protocol.load_labware_from_definition(labware_def, 8)
+    
+with open('CustomLabware/homemadescintillatorvialholder_12_reservoir_20000ul.json') as labware_file: # Electrolyte vials 2
+    labware_def = json.load(labware_file)
+    electrolyte_vials2 = protocol.load_labware_from_definition(labware_def, 9) 
+    
+with open('CustomLabware/homebuilt_1_wellplate_1000ul.json') as labware_file: # Camera
+    labware_def = json.load(labware_file)
+    camera = protocol.load_labware_from_definition(labware_def, 10)   
+    
+from opentrons import protocol_api
+def run(protocol: protocol_api.ProtocolContext):
+    protocol.set_rail_lights(True)
+    tiprack_1 = protocol.load_labware('opentrons_96_tiprack_1000ul', 11)
+    tiprack_1.set_offset(x=0.00, y=2.00, z=0.00)
+    transfer_pipette = protocol.load_instrument('p1000_single', 'left', tip_racks=[tiprack_1])
+    gripper = protocol.load_instrument('p1000_single', 'right', tip_racks=[fake_tip_holder])
+    
+    loc_Abs = Location(Point(104.1, 40.85, 30.0), None) # Location to place cuvette for absorption
+    loc_PL = Location(Point(52.1, 56.5, 42.5), None) # Location to place cuvette for PL
+    loc_Abs_sample = Location(Point(102.6, 39.35, 37.95),None) # Location of the gripper for absorption while holding a substrate
+    loc_PL_sample = Location(Point(50.5, 53.35, 53.0), None) # Location of the gripper for PL while holding a substrate
+    loc_Abs_pickup = Location(Point(102.6, 41.75, 29.0), None) # Location to pick up cuvette for absorption
+    loc_PL_pickup = Location(Point(52.1, 57.0, 42.5), None) # Location to pick up cuvette for PL
+    loc_cam = Location(Point(55, 362, 55), None) # Location to take a picture with the camera
+    
+    # Options
+    fillcuvette = 1;
+    
+    # Set the number of cuvettes
+    c = [["A2","A3","A4","A5","B1","B2","B3","B4","B5","C1","C2","C3"],[]]
+    
+    # Set the number of samples
+    l = [["A2","A3","A4","A5","A6","B1","B2","B3","B4","B5","B6","C1"],[]]
+    
+    # Set the number of electrolytes
+    m = [["A1","A2","A2","A2","A3","A3","A3","A4","C1","C2","C3","C3"],[]]
+    
+    open_gripper()
+    close_gripper()
+    open_gripper_med()
+    
+    robot_send_signal()
+    robot_wait()
+    
+    protocol.max_speeds['X'] = 300 # Sets how quickly the robot arm moves in the x-direction
+    protocol.max_speeds['Y'] = 200 # Sets how quickly the robot arm moves in the y-direction
+    protocol.max_speeds['Z'] = 50 # Sets how quickly the robot arm moves in the z-direction
+    
+    gripper.pick_up_tip()
+    
+    # Load blank cuvette
+    gripper.aspirate(20, cuvette_storage["A1"].bottom(-7)) 
+    gripper.dispense(20, cuvette_storage["A1"].bottom(-7))
+    
+    close_gripper()
+        
+    gripper.move_to(loc_PL) # move gripper to PL cuvette position
+    time.sleep(1)
+        
+    open_gripper()
+
+    for n, i, t in zip(c[0],l[0],m[0]):
+        if len(n)!=0:
+            
+            #transfer_pipette.start_at_tip(tiprack_1['F1'])
+            transfer_pipette.pick_up_tip()
+
+            # Load Cuvette
+            open_gripper_med()
+
+            gripper.aspirate(20, cuvette_storage[n].bottom(-7))
+            gripper.dispense(20, cuvette_storage[n].bottom(-7))
+
+            close_gripper()
+
+            gripper.move_to(loc_Abs) # move gripper to Abs cuvette position 
+            time.sleep(1)
+
+            open_gripper()
+
+            # Fill Cuvette
+            if fillcuvette > 0:
+                protocol.max_speeds['X'] = 450 # Sets how quickly the robot arm moves in the x-direction
+                protocol.max_speeds['Y'] = 100 # Sets how quickly the robot arm moves in the y-direction
+                protocol.max_speeds['Z'] = 75 # Sets how quickly the robot arm moves in the z-direction
+                open_gripper_med()
+                gripper.aspirate(20, electrolyte_vials[t].bottom(60))
+                gripper.dispense(20, electrolyte_vials[t].bottom(60))
+                time.sleep(1)
+                close_gripper()
+
+                transfer_pipette.aspirate(1000, electrolyte_vials[t])
+                transfer_pipette.touch_tip(radius=1.1)
+                transfer_pipette.dispense(1000, cuvette_holder["A2"].bottom(20)) # dispense in absorption cuvette
+                transfer_pipette.blow_out()
+
+                transfer_pipette.aspirate(1000, electrolyte_vials[t])
+                transfer_pipette.touch_tip(radius=1.1)
+                transfer_pipette.dispense(1000, cuvette_holder["A2"].bottom(20)) # dispense in absorption cuvette
+                transfer_pipette.blow_out()
+
+                transfer_pipette.aspirate(1000, electrolyte_vials[t])
+                transfer_pipette.touch_tip(radius=1.1)
+                transfer_pipette.dispense(1000, cuvette_holder["A2"].bottom(20)) # dispense in absorption cuvette
+                transfer_pipette.blow_out()
+
+                transfer_pipette.aspirate(700, electrolyte_vials[t])
+                transfer_pipette.touch_tip(radius=1.1)
+                transfer_pipette.dispense(700, cuvette_holder["A2"].bottom(20)) # dispense in absorption cuvette
+                transfer_pipette.blow_out()
+
+                gripper.aspirate(20, electrolyte_vials[t].bottom(60))
+                gripper.dispense(20, electrolyte_vials[t].bottom(60))
+                open_gripper_med()
+                
+                #transfer_pipette.return_tip() # Use this if you want to return the pipette tip
+                transfer_pipette.drop_tip() # Use this if you want to dispose of the pipette tip
+
+            # Measure Blank Sample for Absorption ################################
+            protocol.max_speeds['X'] = 300 # Sets how quickly the robot arm moves in the x-direction
+            protocol.max_speeds['Y'] = 200 # Sets how quickly the robot arm moves in the y-direction
+            protocol.max_speeds['Z'] = 50 # Sets how quickly the robot arm moves in the z-direction
+    
+            # Pick up blank substrate
+            gripper.aspirate(20, substrate_holder['A1'].bottom(30))
+            gripper.dispense(20, substrate_holder['A1'].bottom(-9))
+            close_gripper()
+
+            # Put blank substrate in cuvette
+            gripper.aspirate(20, loc_Abs_sample) # put blank in abs cuvette (custom)
+            gripper.dispense(20, loc_Abs_sample)
+
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            # Rinsing steps
+            gripper.aspirate(20, rinser['A1'].bottom(30))
+            gripper.touch_tip(radius=0.5, speed=30)
+            gripper.dispense(20, rinser['A1'].bottom(105))
+            gripper.aspirate(20, rinser['A1'].bottom(105))
+            gripper.dispense(20, rinser['A1'].bottom(30))
+            gripper.touch_tip(radius=0.5, speed=30)
+            protocol.delay(seconds=1)
+
+            # Return substrate
+            gripper.aspirate(20, substrate_holder['A1'].bottom(30))
+            gripper.dispense(20, substrate_holder['A1'].bottom(-9))
+            protocol.delay(seconds=1)
+            open_gripper_med()
+
+            # Measure Sample for Absorption ################################
+
+            # Pick up sample substrate
+            gripper.aspirate(20, substrate_holder[i].bottom(30))
+            gripper.dispense(20, substrate_holder[i].bottom(-8))
+            close_gripper()
+
+            # Take a picture of the sample before absorption
+            protocol.set_rail_lights(True)
+
+            gripper.move_to(loc_cam)
+            
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            protocol.set_rail_lights(False)
+
+            # Put sample substrate in cuvette
+            gripper.aspirate(20, loc_Abs_sample) # put sample in abs cuvette (custom)
+            gripper.dispense(20, loc_Abs_sample)
+
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            # Take photo after absorption measurements
+
+            gripper.move_to(loc_cam)
+
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            # Rinsing steps
+            gripper.aspirate(20, rinser['A2'].bottom(30))
+            gripper.touch_tip(radius=0.5, speed=30)
+            gripper.dispense(20, rinser['A2'].bottom(105))
+            gripper.aspirate(20, rinser['A2'].bottom(105))
+            gripper.dispense(20, rinser['A2'].bottom(30))
+            gripper.touch_tip(radius=0.5, speed=30)
+            protocol.delay(seconds=1)
+    
+            # Take photo after rinsing
+            
+            gripper.move_to(loc_cam)
+
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            # Return sample substrate
+            gripper.aspirate(20, substrate_holder[i].bottom(30))
+            gripper.dispense(20, substrate_holder[i].bottom(-8))
+            protocol.delay(seconds=1)
+            open_gripper_med()
+
+            # Return Cuvette
+            gripper.move_to(loc_Abs_pickup) # Grabs the cuvette from abs setup
+            close_gripper()
+
+            gripper.aspirate(20, cuvette_storage[n].bottom(0))
+            gripper.dispense(20, cuvette_storage[n].bottom(0))
+            open_gripper()
+
+    for n, i, t in zip(c[1],l[1],m[1]):
+        if len(n)!=0:
+            
+            #transfer_pipette.start_at_tip(tiprack_1['F1'])
+            transfer_pipette.pick_up_tip()
+
+            # Load Cuvette
+            open_gripper_med()
+
+            gripper.aspirate(20, cuvette_storage2[n].bottom(-7))
+            gripper.dispense(20, cuvette_storage2[n].bottom(-7))
+
+            close_gripper()
+
+            gripper.move_to(loc_Abs) # move gripper to Abs cuvette position 
+            time.sleep(1)
+
+            open_gripper()
+
+            # Fill Cuvette
+            if fillcuvette > 0:
+                protocol.max_speeds['X'] = 450 # Sets how quickly the robot arm moves in the x-direction
+                protocol.max_speeds['Y'] = 300 # Sets how quickly the robot arm moves in the y-direction
+                protocol.max_speeds['Z'] = 75 # Sets how quickly the robot arm moves in the z-direction
+                open_gripper_med()
+                gripper.aspirate(20, electrolyte_vials2[t].bottom(60))
+                gripper.dispense(20, electrolyte_vials2[t].bottom(60))
+                time.sleep(1)
+                close_gripper()
+
+                transfer_pipette.aspirate(1000, electrolyte_vials2[t])
+                transfer_pipette.touch_tip(radius=1.1)
+                transfer_pipette.dispense(1000, cuvette_holder["A2"].bottom(20)) # dispense in absorption cuvette
+                transfer_pipette.blow_out()
+
+                transfer_pipette.aspirate(1000, electrolyte_vials2[t])
+                transfer_pipette.touch_tip(radius=1.1)
+                transfer_pipette.dispense(1000, cuvette_holder["A2"].bottom(20)) # dispense in absorption cuvette
+                transfer_pipette.blow_out()
+
+                transfer_pipette.aspirate(1000, electrolyte_vials2[t])
+                transfer_pipette.touch_tip(radius=1.1)
+                transfer_pipette.dispense(1000, cuvette_holder["A2"].bottom(20)) # dispense in absorption cuvette
+                transfer_pipette.blow_out()
+
+                transfer_pipette.aspirate(700, electrolyte_vials2[t])
+                transfer_pipette.touch_tip(radius=1.1)
+                transfer_pipette.dispense(700, cuvette_holder["A2"].bottom(20)) # dispense in absorption cuvette
+                transfer_pipette.blow_out()
+
+                gripper.aspirate(20, electrolyte_vials2[t].bottom(60))
+                gripper.dispense(20, electrolyte_vials2[t].bottom(60))
+                open_gripper_med()
+                
+                #transfer_pipette.return_tip() # Use this if you want to return the pipette tip
+                transfer_pipette.drop_tip() # Use this if you want to dispose of the pipette tip
+
+            # Measure Blank Sample for Absorption ################################
+            protocol.max_speeds['X'] = 300 # Sets how quickly the robot arm moves in the x-direction
+            protocol.max_speeds['Y'] = 200 # Sets how quickly the robot arm moves in the y-direction
+            protocol.max_speeds['Z'] = 50 # Sets how quickly the robot arm moves in the z-direction
+            
+            # Pick up blank substrate
+            gripper.aspirate(20, substrate_holder['A1'].bottom(30))
+            gripper.dispense(20, substrate_holder['A1'].bottom(-9))
+            close_gripper()
+
+            # Put blank substrate in cuvette
+            gripper.aspirate(20, loc_Abs_sample) # put blank in abs cuvette (custom)
+            gripper.dispense(20, loc_Abs_sample)
+
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            # Rinsing steps
+            gripper.aspirate(20, rinser['A1'].bottom(30))
+            gripper.touch_tip(radius=0.5, speed=30)
+            gripper.dispense(20, rinser['A1'].bottom(105))
+            gripper.aspirate(20, rinser['A1'].bottom(105))
+            gripper.dispense(20, rinser['A1'].bottom(30))
+            gripper.touch_tip(radius=0.5, speed=30)
+            protocol.delay(seconds=1)
+
+            # Return substrate
+            gripper.aspirate(20, substrate_holder['A1'].bottom(30))
+            gripper.dispense(20, substrate_holder['A1'].bottom(-9))
+            protocol.delay(seconds=1)
+            open_gripper_med()
+
+            # Measure Sample for Absorption ################################
+
+            # Pick up sample substrate
+            gripper.aspirate(20, substrate_holder2[i].bottom(30))
+            gripper.dispense(20, substrate_holder2[i].bottom(-8))
+            close_gripper()
+
+            # Take a picture of the sample before absorption
+            protocol.set_rail_lights(True)
+
+            gripper.move_to(loc_cam)
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            protocol.set_rail_lights(False)
+
+            # Put sample substrate in cuvette
+            gripper.aspirate(20, loc_Abs_sample) # put sample in abs cuvette (custom)
+            gripper.dispense(20, loc_Abs_sample)
+
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            # Take photo after absorption measurements
+
+            gripper.move_to(loc_cam)
+
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            # Rinsing steps
+            gripper.aspirate(20, rinser['A2'].bottom(30))
+            gripper.touch_tip(radius=0.5, speed=30)
+            gripper.dispense(20, rinser['A2'].bottom(105))
+            gripper.aspirate(20, rinser['A2'].bottom(105))
+            gripper.dispense(20, rinser['A2'].bottom(30))
+            gripper.touch_tip(radius=0.5, speed=30)
+            protocol.delay(seconds=1)
+    
+            # Take photo after rinsing
+            
+            gripper.move_to(loc_cam)
+
+            robot_send_signal()
+            robot_wait()
+            time.sleep(2)
+
+            # Return sample substrate
+            gripper.aspirate(20, substrate_holder2[i].bottom(30))
+            gripper.dispense(20, substrate_holder2[i].bottom(-8))
+            protocol.delay(seconds=1)
+            open_gripper_med()
+
+            # Return Cuvette
+            gripper.move_to(loc_Abs_pickup) # Grabs the cuvette from abs setup
+            close_gripper()
+
+            gripper.aspirate(20, cuvette_storage2[n].bottom(0))
+            gripper.dispense(20, cuvette_storage2[n].bottom(0))
+            open_gripper()
+    
+    # Return blank cuvette
+    gripper.move_to(loc_PL_pickup) # Grabs the blank cuvette from PL setup
+    close_gripper()
+
+    gripper.aspirate(20, cuvette_storage["A1"].bottom(0))
+    gripper.dispense(20, cuvette_storage["A1"].bottom(0))
+    open_gripper()   
+
+protocol.set_rail_lights(False)
+protocol.home()    
+run(protocol)  # your protocol will now run
+protocol.home() 
